@@ -1,0 +1,53 @@
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+
+# Archivos locales de base de datos
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos temporales de TypeScript
+*.tsbuildinfo
+
+# Publication: local tools and generated output
+.vscode/
+.idea/
+.codex/
+.agents/
+.aws/
+.vercel/
+out/
+dist/
+.cache/
+.turbo/
+
+# Database sidecars and temporary files
+*.db-*
+*.sqlite-*
+*.sqlite3-*
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Private credentials and keys
+.npmrc
+.yarnrc
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
