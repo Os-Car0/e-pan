@@ -1,4 +1,5 @@
 "use client";
+import {imageUploadMimeTypes,maxImageUploadBytes} from "@/lib/image-upload";
 import Link from "next/link";import {ChangeEvent,FormEvent,useEffect,useState} from "react";
 type Category={id:string;name:string};type Product={id:string;name:string;description:string;priceCents:number;imageUrl:string;category:{id:string;name:string};active:boolean;inventory:number|null;madeToOrder:boolean};
 type Form={name:string;description:string;price:string;imageUrl:string;categoryId:string;inventory:string;tracked:boolean;active:boolean;madeToOrder:boolean};const initial:Form={name:"",description:"",price:"",imageUrl:"",categoryId:"",inventory:"",tracked:false,active:true,madeToOrder:false};
@@ -7,7 +8,25 @@ export default function AdminProducts(){const [categories,setCategories]=useStat
  useEffect(()=>{void load()},[]);
  function edit(p:Product){setEditing(p.id);setMessage("");setForm({name:p.name,description:p.description,price:(p.priceCents/100).toFixed(2),imageUrl:p.imageUrl,categoryId:p.category.id,inventory:p.inventory===null?"":String(p.inventory),tracked:p.inventory!==null,active:p.active,madeToOrder:p.madeToOrder});window.scrollTo({top:0,behavior:"smooth"})}
  function fresh(){setEditing(null);setMessage("");setForm({...initial,categoryId:categories[0]?.id||""})}
- async function uploadImage(event:ChangeEvent<HTMLInputElement>){const file=event.target.files?.[0];if(!file)return;setError("");setMessage("");setUploading(true);try{if(!file.type.startsWith("image/"))throw new Error("Selecciona un archivo de imagen.");const body=new FormData();body.append("file",file);const r=await fetch("/api/admin/uploads",{method:"POST",body}),data=await r.json();if(!r.ok)throw new Error(data.error||"No se pudo subir la imagen.");setForm(f=>({...f,imageUrl:data.url}));setMessage("Imagen cargada correctamente.")}catch(e){setError(e instanceof Error?e.message:"No se pudo subir la imagen.")}finally{setUploading(false)}}
+ async function uploadImage(event:ChangeEvent<HTMLInputElement>){
+  const file=event.target.files?.[0];if(!file)return;
+  setError("");setMessage("");setUploading(true);
+  try{
+   if(!(imageUploadMimeTypes as readonly string[]).includes(file.type))throw new Error("Selecciona una imagen JPG, PNG, GIF, WebP, AVIF, BMP, TIFF o HEIC.");
+   if(file.size<1||file.size>maxImageUploadBytes)throw new Error("La imagen no puede superar 10 MB ni estar vacia.");
+   const response=await fetch("/api/admin/uploads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({type:file.type,size:file.size})});
+   const authorization=await response.json();
+   if(!response.ok)throw new Error(authorization.error||"No se pudo autorizar la imagen.");
+   const uploadUrl=new URL(authorization.uploadUrl);
+   if(uploadUrl.origin!=="https://api.cloudinary.com"||!uploadUrl.pathname.endsWith("/image/upload"))throw new Error("Destino de imagen no valido.");
+   const body=new FormData();body.append("file",file);
+   for(const [key,value] of Object.entries(authorization.fields as Record<string,string>))body.append(key,value);
+   const upload=await fetch(uploadUrl,{method:"POST",body}),data=await upload.json();
+   if(!upload.ok||typeof data.secure_url!=="string"||typeof authorization.deliveryPrefix!=="string"||!data.secure_url.startsWith(authorization.deliveryPrefix)||!Number.isInteger(data.bytes)||data.bytes<1||data.bytes>maxImageUploadBytes)throw new Error("No se pudo guardar la imagen en el almacenamiento.");
+   setForm(f=>({...f,imageUrl:data.secure_url}));setMessage("Imagen cargada correctamente.");
+  }catch(e){setError(e instanceof Error?e.message:"No se pudo subir la imagen.")}
+  finally{setUploading(false)}
+ }
  async function save(e:FormEvent){e.preventDefault();setError("");setMessage("");if(!form.imageUrl){setError("Selecciona una imagen antes de guardar el producto.");return}setBusy(true);try{const body={name:form.name,description:form.description,priceCents:Math.round(Number(form.price)*100),imageUrl:form.imageUrl,categoryId:form.categoryId,inventory:form.tracked?Number(form.inventory):null,active:form.active,madeToOrder:form.madeToOrder};const r=await fetch(editing?`/api/admin/products/${editing}`:"/api/admin/products",{method:editing?"PATCH":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}),data=await r.json();if(!r.ok)throw new Error(data.error||"No se pudo guardar el producto.");setMessage(editing?"Cambios guardados.":"Producto creado.");fresh();await load()}catch(e){setError(e instanceof Error?e.message:"No se pudo guardar el producto.")}finally{setBusy(false)}}
  if(!authorized)return <main className="admin"><Link className="brand" href="/">E<span>·</span>Pan</Link><h1 className="serif">Catálogo</h1><p role="alert">{error||"Verificando sesión…"}</p><Link className="primary" href="/admin">Iniciar sesión</Link></main>;
  return <main className="admin"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16}}><div><Link className="brand" href="/">E<span>·</span>Pan</Link><h1 className="serif">Administrar productos</h1></div><Link href="/admin">Ver pedidos</Link></div>
@@ -15,7 +34,7 @@ export default function AdminProducts(){const [categories,setCategories]=useStat
  <label className="label">Nombre<input required minLength={2} maxLength={100} className="formInput" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
  <label className="label">Precio MXN<input required type="number" min="0.01" max="1000000" step="0.01" className="formInput" value={form.price} onChange={e=>setForm({...form,price:e.target.value})}/></label>
  <label className="label">Categoría<select required className="formInput" value={form.categoryId} onChange={e=>setForm({...form,categoryId:e.target.value})}>{categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
- <label className="label">Imagen del producto<input required={!form.imageUrl} type="file" accept="image/*" capture="environment" className="formInput" onChange={uploadImage} disabled={uploading}/><small>{uploading?"Subiendo imagen…":"Puedes tomar una foto o elegir una imagen del dispositivo (máximo 10 MB)."}</small></label>
+ <label className="label">Imagen del producto<input required={!form.imageUrl} type="file" accept={imageUploadMimeTypes.join(",")} capture="environment" className="formInput" onChange={uploadImage} disabled={uploading}/><small>{uploading?"Subiendo imagen…":"Puedes tomar una foto o elegir una imagen del dispositivo (máximo 10 MB)."}</small></label>
  {form.imageUrl&&<div style={{gridColumn:"1/-1",display:"flex",alignItems:"center",gap:14,margin:"8px 0"}}><img src={form.imageUrl} alt="Vista previa del producto" width="120" height="90" style={{objectFit:"cover",borderRadius:8}}/><span>Imagen seleccionada</span></div>}
  <label className="label" style={{gridColumn:"1/-1"}}>Descripción<textarea required maxLength={2000} className="formInput" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label>
  <label className="label" style={{display:"flex",gap:9,alignItems:"center",margin:"10px 0"}}><input type="checkbox" checked={form.tracked} onChange={e=>setForm({...form,tracked:e.target.checked})}/>Controlar existencias</label>

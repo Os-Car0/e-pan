@@ -1,54 +1,126 @@
 # E-Pan
 
-La configuración de SQLite y los comandos manuales están documentados en [SQLITE.md](./SQLITE.md).
+Tienda para panadería mexicana con Next.js 15, React 19, TypeScript y Prisma 6.
 
-Tienda para panadería mexicana construida con Next.js, TypeScript, SQLite y Prisma.
+## Estado actual
 
-## Configurar SQLite
+Estado verificado durante la preparación del 15 de noviembre de 2026:
 
-La configuración local usa SQLite mediante `DATABASE_URL="file:./dev.db"`; la base queda en `prisma/dev.db`. `.env` contiene la configuración local y no debe compartirse. En `.gitignore` ya están excluidos `.env` y `.env.*`, excepto `.env.example`.
+- Neon PostgreSQL configurado: conexión agrupada para la aplicación y directa
+  para las herramientas administrativas.
+- Dos migraciones aplicadas y verificadas: esquema inicial y limitador de login.
+- Catálogo real importado: 4 categorías, 5 productos y 1 configuración de tienda.
+- Primer administrador creado con rol ADMIN y contraseña almacenada como hash
+  bcrypt de coste 12. No hay credenciales predeterminadas que deban publicarse.
+- Cloudinary autenticado mediante GET /ping, con respuesta HTTP 200. La subida
+  real desde el panel sigue pendiente de una prueba expresamente autorizada.
+- Protección de login implementada con contadores persistentes en PostgreSQL:
+  5 intentos por cuenta en 15 minutos y 60 por IP en 10 minutos.
+- Despliegue en Netlify pendiente. No se ha comprobado ninguna URL pública.
 
-1. No necesitas instalar un servidor de base de datos: SQLite usa un archivo local.
-2. Verifica que `.env` tenga `DATABASE_URL="file:./dev.db"`. No compartas ni subas `.env`.
-3. Genera un secreto de sesión local con PowerShell: `[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))`; coloca el resultado en `AUTH_SECRET`. No uses el marcador de ejemplo en producción.
-4. Reinicia `npm run dev` después de cambiar `.env`.
+La guía vigente es [DEPLOYMENT.md](./DEPLOYMENT.md). Los informes de preparación
+bajo `prisma/` conservan el estado que existía al redactarlos; no sustituyen este
+estado actual ni autorizan repetir importaciones, migraciones o creación de usuarios.
 
-La base SQLite se crea al ejecutar el comando de sincronización. No se crea ni modifica ninguna base hasta que ejecutes manualmente ese comando.
+El proyecto original `C:\dev\E-pan` conserva SQLite y sus datos. Esta copia utiliza
+PostgreSQL para funcionar. [SQLITE.md](./SQLITE.md) es una referencia histórica,
+no el procedimiento de despliegue. El importador SQLite es una herramienta manual,
+no una dependencia de las rutas de producción.
 
-## Esquema y datos
+## Configuración y desarrollo
 
-No hay migraciones SQL versionadas en este checkout: solo existe `prisma/schema.prisma`, y el script actual de desarrollo usa `prisma db push`. No se aplicó ninguna operación porque no hay URL de base de datos configurada.
+1. Usar Node.js 22, como indican `.nvmrc` y `netlify.toml`.
+2. Instalar las dependencias con `npm ci`.
+3. Copiar `.env.example` a un `.env` privado y configurar las variables necesarias
+   para un entorno autorizado. Nunca incluir credenciales en Git, chat o logs.
+4. Para una base nueva, revisar y autorizar por separado las migraciones y los
+   datos necesarios. La base Neon de esta preparación ya tiene su esquema y catálogo.
+   No reiniciarla, ejecutar seed o repetir importaciones para iniciar la aplicación.
+5. Iniciar `npm run dev` cuando la base de desarrollo esté lista.
 
-Con una base vacía de desarrollo, revisa la URL y ejecuta `npm run db:push`, luego `npm run db:seed`. `db:push` sincroniza el esquema y no equivale a ejecutar migraciones versionadas. Antes de apuntarlo a una base con datos, respáldala y revisa el diff; no aceptes un reset automático si Prisma lo propone. Para producción, prepara y revisa una estrategia de baseline/migración con el esquema real existente antes de aplicar cambios.
+Sin una base accesible, el catálogo muestra un error con reintento; no se usan
+productos demo para aparentar disponibilidad. Ningún pedido se simula como guardado.
 
-El seed agrega productos demo solo cuando no existen y no sobrescribe los productos ya editados. Sin `ADMIN_EMAIL` y `ADMIN_PASSWORD`, no crea una cuenta administrativa. Si se define solo una de esas variables, se detiene con error. Para crear o rotar el primer administrador en PowerShell, define ambos temporalmente en la consola, con una contraseña de 12 caracteres o más, y ejecuta `npm run db:seed`. No se publica una cuenta ni contraseña predeterminada; elimina esas variables de la consola al terminar. Después inicia sesión en `/admin`.
+## Variables para Netlify
 
-## Panel administrativo
+Configurar los valores mediante la UI/API privada del hosting. Las variables del
+servidor deben estar disponibles para Functions; las necesarias para el build
+Prisma también deben estar disponibles durante la compilación. No basta con
+`build.environment` de `netlify.toml` para suministrar variables al runtime.
 
-- `/admin`: inicio de sesión y atención de pedidos.
-- `/admin/productos`: crear productos y editar nombre, descripción, precio MXN, categoría, URL HTTPS de imagen, estado activo, existencias y preparación bajo pedido.
-- Los endpoints de lectura/escritura verifican la sesión firmada y confirman el rol actual en la base de datos. No existe registro público. Los cambios de producto e inventario generan registros de auditoría/movimiento.
-- El pago se muestra en modo de solo lectura. La interfaz no puede confirmar un pago; ese estado depende de la verificación del webhook de Mercado Pago.
-- Las transiciones de pedido se validan en servidor. Un pedido pagado no se puede cancelar desde este panel sin un flujo de reembolso.
+| Variable | Uso |
+| --- | --- |
+| `DATABASE_URL` | Conexión PostgreSQL agrupada de Neon con TLS |
+| `DIRECT_URL` | Conexión directa con TLS para herramientas Prisma |
+| `AUTH_SECRET` | Secreto existente y seguro de firma de sesiones y HMAC |
+| `CLOUDINARY_CLOUD_NAME` | Entorno de imágenes |
+| `CLOUDINARY_API_KEY` | Identificador utilizado por las subidas firmadas |
+| `CLOUDINARY_API_SECRET` | Secreto de firma, exclusivamente en el servidor |
+| `ADMIN_LOGIN_IP_SOURCE` | Configurar `netlify` únicamente detrás de Netlify |
+| `NEXT_PUBLIC_SITE_URL` | URL pública HTTPS definitiva, sin secretos |
+| `STORE_PHONE` | Reservada; actualmente no consumida por el código de la aplicación |
+| `MERCADOPAGO_ACCESS_TOKEN` | Opcional, solo al habilitar pagos reales |
+| `MERCADOPAGO_WEBHOOK_SECRET` | Necesaria junto con el token al habilitar pagos |
 
-El catálogo público lee los productos activos de SQLite; cambios se reflejan tras revalidación de caché (hasta 60 segundos). Si la base no está accesible, devuelve `503` y registra solo el tipo/código del error, no la URL de conexión.
+El código de Cloudinary utiliza las tres variables separadas; `CLOUDINARY_URL`
+por sí sola no basta. No configurar `ADMIN_EMAIL`, `ADMIN_PASSWORD` ni `ADMIN_NAME`
+permanentemente en Netlify: el administrador ya existe y el login usa su hash en Neon.
+
+`.env`, sus variantes privadas, `.next`, `.cache`, `node_modules` y bases locales
+están excluidos de Git. `.env.example` solo contiene campos vacíos y ejemplos públicos.
+No subir ni desplegar directamente el build local: sus trazas privadas pueden
+referenciar `.env`. Netlify debe compilar desde el código de GitHub.
+
+## Panel administrativo y seguridad
+
+- `/admin`: acceso del personal y atención de pedidos.
+- `/admin/productos`: catálogo, precios, categorías existentes y existencias.
+- Las APIs verifican el JWT y consultan el rol actual ADMIN o BAKER en la base.
+- Sesión de ocho horas; cookie HttpOnly, SameSite=Lax y Secure en producción.
+- El login reserva cuotas por cuenta e IP de forma atómica antes de comprobar
+  credenciales. Responde 429 con Retry-After al alcanzar el límite; los intentos
+  bloqueados no prolongan la ventana. La identidad se almacena como HMAC.
+- En producción exige `ADMIN_LOGIN_IP_SOURCE=netlify` y la IP de conexión que
+  suministra Netlify; no usa X-Forwarded-For o X-Real-IP como alternativa.
+  Si falta la configuración o falla el almacenamiento, devuelve 503.
+- Las imágenes se suben directamente a Cloudinary con autorización firmada de
+  servidor; el API Secret no llega al navegador y no se escribe en disco serverless.
+- Mercado Pago requiere configuración y verificación independiente antes de
+  considerarse disponible para pagos reales.
+
+No existe registro público de usuarios. `prisma/create-admin.ts` solo consulta por
+defecto y se niega a crear el primer administrador si ya hay usuarios. No volver
+a ejecutar su modo de creación en esta base. `db:seed` puede crear datos demo y
+actualizar credenciales: no forma parte del despliegue y no debe utilizarse como
+recuperación del acceso o sustituto del catálogo real.
 
 ## Ubicación de recogida
 
-La ubicación oficial se mantiene en `src/lib/pickup-location.ts`. La sección **Visítanos**, el checkout de recogida y el seguimiento reutilizan esa configuración; no hay controles públicos para modificarla ni se escribe en `StoreSettings`.
+La dirección y el punto confirmado por la panadería están centralizados en
+`src/lib/pickup-location.ts`. Visítanos, el checkout PICKUP y el seguimiento usan
+esa configuración. El mapa OpenStreetMap y el enlace Google Maps conservan el
+punto oficial, sin controles públicos para cambiarlo.
 
-El mapa usa el iframe de OpenStreetMap, sin dependencias ni claves de API. **Cómo llegar** abre Google Maps con las mismas coordenadas como destino. Solo deben configurarse coordenadas confirmadas por la panadería; si se dejan en `null` o son inválidas, no se publica un marcador y se ofrece la dirección como búsqueda alternativa. El mapa incluye aviso de carga, reintento y enlace externo permanente como alternativa ante bloqueos del iframe.
+## Verificaciones y build
 
-## Service Worker
+- `npm run lint`
+- `npm run typecheck`
+- `npm test`
+- `npm run build`: genera Prisma Client y compila Next.js; no migra ni carga datos.
+- `npm start`: inicia el build de producción local; las pruebas de login deben
+  respetar la configuración de confianza de IP y la autorización del entorno.
 
-El repositorio no tenía `public/sw.js` ni código de registro (`navigator.serviceWorker`). Next sirve ahora `public/sw.js` como respuesta de compatibilidad para clientes/navegadores con una petición antigua. El archivo no registra listeners de `fetch`, no crea caché y no habilita modo offline; Next sigue atendiendo las páginas normalmente. No se añadió una estrategia PWA.
+La última revisión completa aprobó TypeScript, ESLint, 65 pruebas en 12 archivos
+y el build. La advertencia previa por el plugin específico de Next.js ausente
+en ESLint no impide compilar. No añadir migraciones, `db:push` o `db:seed` al build
+ni al arranque automático.
 
-## Comandos
+## Antes de publicar
 
-- `npm install`
-- `npm run db:push` (solo después de configurar una base de desarrollo correcta)
-- `npm run db:seed` (opcional; demo y primer administrador)
-- `npm run dev`
-- `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`
+Revisar [DEPLOYMENT.md](./DEPLOYMENT.md), configurar las variables del hosting y
+comprobar en un entorno autorizado el login, la IP fiable, la concurrencia real del
+limitador y una subida Cloudinary. Revisar también el catálogo, navegación, mapa y
+URL HTTPS pública. El build local por sí solo no demuestra un despliegue exitoso.
 
-La creación/consulta real de productos y pedidos, y las pruebas de escritura administrativa, requieren que el archivo SQLite esté inicializado. Las credenciales de Mercado Pago son independientes y solo se necesitan para iniciar y verificar pagos.
+`public/sw.js` solo responde a registros antiguos de service worker: no intercepta
+peticiones ni crea caché, y no habilita funcionamiento offline.

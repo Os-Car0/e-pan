@@ -21,6 +21,7 @@ coverage/
 .agents/
 .aws/
 .vercel/
+.netlify/
 out/
 dist/
 .cache/

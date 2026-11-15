@@ -1,0 +1,2 @@
+# Prisma migration provider; no database operation has been executed.
+provider = "postgresql"

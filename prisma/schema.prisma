@@ -1,9 +1,11 @@
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 datasource db {
-provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 enum Role {
   CUSTOMER
@@ -151,4 +153,14 @@ model StoreSettings {
   address String?
   hours String?
   updatedAt DateTime @updatedAt
+}
+
+
+// Independent of User: unknown accounts receive the same protection.
+// Keys are HMAC digests, never cleartext IP addresses or email addresses.
+model AdminLoginRateLimit {
+  key String @id @db.VarChar(80)
+  attempts Int @default(0)
+  expiresAt DateTime @db.Timestamptz(3)
+  @@index([expiresAt])
 }

@@ -1,3 +1,7 @@
+# Historical reference: original local SQLite project
+
+> These commands apply to C:\dev\E-pan, the original SQLite checkout. The deployment branch uses PostgreSQL/Neon. Do not run these steps against the deployment database. See DEPLOYMENT.md.
+
 # SQLite local
 
 El proyecto usa Prisma `6.16.2`, compatible con SQLite, enums y campos JSON.

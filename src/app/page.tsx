@@ -1,20 +1,20 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ShoppingBag, X, Plus, Minus, ArrowRight } from "lucide-react";
-import { categories, formatPrice, products } from "@/lib/catalog";
+import { categories, formatPrice, type Product } from "@/lib/catalog";
 import PickupDetails from "./pickup-details";
 import VisitSection from "./visit-section";
 type CartItem = { id: string; qty: number };
 type OrderResponse = { number: string; trackingToken: string; status?: string };
-type SavedOrder = { number: string; token: string; status?: string };
 export default function Home() {
   const [category, setCategory] = useState("Todo"),
     [search, setSearch] = useState(""),
     [sort, setSort] = useState("relevance"),
-    [catalog, setCatalog] = useState(products),
+    [catalog, setCatalog] = useState<Product[]>([]),
+    [catalogLoading, setCatalogLoading] = useState(true),
+    [catalogError, setCatalogError] = useState(""),
     [cart, setCart] = useState<CartItem[]>([]),
     [pickQty, setPickQty] = useState<Record<string, number>>({}),
-    [activeOrder, setActiveOrder] = useState<SavedOrder | null>(null),
     [editingOrder, setEditingOrder] = useState<{
       number: string;
       token: string;
@@ -33,15 +33,23 @@ export default function Home() {
     address: "",
     notes: "",
   });
-  useEffect(() => {
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError("");
     try {
-      const saved = localStorage.getItem("epan-active-order");
-      if (saved) {
-        const value = JSON.parse(saved);
-        if (value?.number && value?.token) setActiveOrder(value);
-      }
-    } catch {}
+      const response = await fetch("/api/products", { cache: "no-store" });
+      if (!response.ok) throw new Error("Catalog unavailable");
+      const data: unknown = await response.json();
+      if (!Array.isArray(data)) throw new Error("Invalid catalog response");
+      setCatalog(data);
+    } catch {
+      setCatalog([]);
+      setCatalogError("No pudimos cargar el catálogo. Inténtalo de nuevo más tarde.");
+    } finally {
+      setCatalogLoading(false);
+    }
   }, []);
+  useEffect(() => { void loadCatalog(); }, [loadCatalog]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("edit") !== "1") return;
@@ -98,12 +106,6 @@ export default function Home() {
       }
     } catch {}
     setReady(true);
-    void fetch("/api/products")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (Array.isArray(data)) setCatalog(data);
-      })
-      .catch(() => {});
   }, []);
   useEffect(() => {
     if (ready) localStorage.setItem("epan-cart", JSON.stringify(cart));
@@ -125,11 +127,11 @@ export default function Home() {
     if (sort === "price-desc") list.sort((a, b) => b.price - a.price);
     return list;
   }, [catalog, category, search, sort]);
-  const lines = cart.map((c) => ({
-    ...(catalog.find((p) => p.id === c.id) ??
-      products.find((p) => p.id === c.id)!),
-    qty: c.qty,
-  }));
+  const lines = cart.flatMap((item) => {
+    const product = catalog.find((product) => product.id === item.id);
+    return product ? [{ ...product, qty: item.qty }] : [];
+  });
+  const unavailableItems = cart.filter((item) => !catalog.some((product) => product.id === item.id));
   const total = lines.reduce((s, p) => s + p.price * p.qty, 0);
   function selectedQty(id: string) {
     return pickQty[id] ?? 1;
@@ -158,6 +160,8 @@ export default function Home() {
   }
   async function place() {
     if (busyRef.current) return;
+    if (catalogLoading || catalogError || unavailableItems.length)
+      return alert("Revisa la disponibilidad del catálogo antes de continuar.");
     if (
       !form.name.trim() ||
       form.phone.replace(/\D/g, "").length < 10 ||
@@ -198,11 +202,6 @@ export default function Home() {
         : result.trackingToken;
       const url = `/seguimiento?number=${encodeURIComponent(result.number)}&token=${encodeURIComponent(trackingToken)}`;
       setTrackUrl(url);
-      setActiveOrder({
-        number: result.number,
-        token: trackingToken,
-        status: result.status,
-      });
       localStorage.setItem(
         "epan-active-order",
         JSON.stringify({
@@ -320,7 +319,14 @@ export default function Home() {
               <option value="price-desc">Precio: mayor a menor</option>
             </select>
           </div>
-          {visible.length === 0 ? (
+          {catalogLoading ? (
+            <p className="notice" role="status">Cargando catálogo…</p>
+          ) : catalogError ? (
+            <div className="notice" role="alert">
+              <p>{catalogError}</p>
+              <button className="add" type="button" onClick={() => void loadCatalog()}>Reintentar</button>
+            </div>
+          ) : visible.length === 0 ? (
             <div className="notice">
               No encontramos productos en esta categoría.
             </div>
@@ -437,11 +443,17 @@ export default function Home() {
                 <X />
               </button>
             </div>
+            {!catalogLoading && !catalogError && unavailableItems.length > 0 && (
+              <div className="notice" role="alert">
+                <p>Algunos productos de tu carrito ya no están disponibles.</p>
+                <button className="add" type="button" onClick={() => setCart(current => current.filter(item => catalog.some(product => product.id === item.id)))}>Retirar productos no disponibles</button>
+              </div>
+            )}
             {!checkout ? (
               <>
                 {!lines.length ? (
                   <>
-                    <p>Tu carrito está vacío.</p>
+                    <p>{cart.length ? "El carrito se mostrará cuando el catálogo esté disponible." : "Tu carrito está vacío."}</p>
                     <button
                       className="add"
                       type="button"
@@ -495,6 +507,7 @@ export default function Home() {
                     </div>
                     <button
                       className="primary"
+                      disabled={catalogLoading || Boolean(catalogError) || unavailableItems.length > 0}
                       onClick={() => setCheckout(true)}
                     >
                       Continuar con el pedido <ArrowRight size={16} />
@@ -569,7 +582,7 @@ export default function Home() {
                 <div className="notice">
                   Total estimado: <b>{formatPrice(total)}</b>
                 </div>
-                <button className="primary" disabled={busy} onClick={place}>
+                <button className="primary" disabled={busy || catalogLoading || Boolean(catalogError) || unavailableItems.length > 0} onClick={place}>
                   {busy ? "Registrando…" : "Registrar pedido"}
                 </button>
               </>
